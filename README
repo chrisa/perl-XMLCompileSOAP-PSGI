@@ -1,0 +1,17 @@
+XML::Compile::SOAP::PSGI - serve up XML::Compile::SOAP as PSGI.
+
+This module glues an XML::Compile::SOAP service into a PSGI
+app. Assumes you have a WSDL for your service. 
+
+  my $impl = Service::Implementation->new(...);
+
+  my $app = XML::Compile::SOAP::PSGI->new(
+    wsdl_file   => 'wsdl/foo.wsdl',
+    impl_object => $impl,
+  );
+
+  $app; # PSGI app
+
+
+
+
