@@ -81,15 +81,15 @@ sub call {
         if ($request->method eq 'POST') {
                 my $parser = XML::LibXML->new;
                 my $doc;
-		eval {
-			$doc = $parser->load_xml( IO => $request->body );
-		};
-		if ($@) {
-			return [500, [], [$@]];
-		};
+                eval {
+                        $doc = $parser->load_xml( IO => $request->body );
+                };
+                if ($@) {
+                        return [500, [], [$@]];
+                }
 
                 my $action = $self->actionFromHeader($request);
-                my ($status, $huh, $response) 
+                my ($status, $msg, $response) 
                      = $self->process($doc, $request, $action);
 
                 return [$status, [], [$response->toString]];
