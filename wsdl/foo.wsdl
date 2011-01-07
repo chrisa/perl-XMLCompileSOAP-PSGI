@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+		  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+		  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+		  xmlns:tns="urn:ComplexApp"
+		  targetNamespace="urn:ComplexApp"
+		  name="ComplexApp">
+
+  <types xmlns="http://schemas.xmlsoap.org/wsdl/">
+    <xsd:schema targetNamespace="urn:ComplexApp" elementFormDefault="qualified">
+
+      <xsd:complexType name="GoodRequestType">
+	<xsd:all>
+	  <xsd:element name="email" type="xsd:string"/>
+	  <xsd:element name="password" type="xsd:string"/>
+	  <xsd:element name="id" type="xsd:int"/>
+	</xsd:all>
+      </xsd:complexType>
+      <xsd:complexType name="GoodResponseType">
+	<xsd:all>
+	  <xsd:element name="result" type="xsd:string"/>
+	</xsd:all>
+      </xsd:complexType>
+
+      <xsd:element name="GoodRequest" type="tns:GoodRequestType"/>
+      <xsd:element name="GoodResponse" type="tns:GoodResponseType"/>
+    </xsd:schema>
+  </types>
+
+  <message xmlns="http://schemas.xmlsoap.org/wsdl/" name="GoodInput">
+    <part name="body" element="tns:GoodRequest"/>
+  </message>
+  <message xmlns="http://schemas.xmlsoap.org/wsdl/" name="GoodOutput">
+    <part name="body" element="tns:GoodResponse"/>
+  </message>
+
+  <portType xmlns="http://schemas.xmlsoap.org/wsdl/" name="ComplexAppPort">
+    <operation name="Good">
+      <input message="tns:GoodInput"/>
+      <output message="tns:GoodOutput"/>
+    </operation>
+  </portType>
+
+  <binding xmlns="http://schemas.xmlsoap.org/wsdl/" name="ComplexAppBinding" type="tns:ComplexAppPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Good">
+      <soap:operation style="document" soapAction=""/>
+      <input>
+	<soap:body use="literal"/>
+      </input>
+      <output>
+	<soap:body use="literal"/>
+      </output>
+    </operation>
+  </binding>
+
+  <service name="ComplexApp" xmlns="http://schemas.xmlsoap.org/wsdl/">
+    <port binding="tns:ComplexAppBinding" name="ComplexAppPort">
+      <soap:address location="http://localhost:5000/soap/foo" />
+    </port>
+  </service>
+
+</wsdl:definitions>
