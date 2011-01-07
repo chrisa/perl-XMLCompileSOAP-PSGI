@@ -26,8 +26,6 @@ XML::Compile::SOAP::PSGI - wrap a SOAP service as a PSGI app
 use Plack::Request;
 use Plack::Util::Accessor qw/ wsdl_file impl_object /;
 
-use File::Slurp qw/ read_file /;
-
 use XML::Compile::SOAP11;
 use XML::Compile::WSDL11;
 
@@ -46,9 +44,8 @@ sub new {
         my $class = shift;
         my $self = $class->SUPER::new(@_);
 
-        my $text = read_file($self->wsdl_file);
-        my $wsdl = XML::Compile::WSDL11->new($text);
-        
+        my $wsdl = XML::Compile::WSDL11->new($self->wsdl_file);
+
         my $callbacks = {};
         for my $op ($wsdl->operations) {
                 my $callback = $self->_soap_callback($op->name);
@@ -75,7 +72,8 @@ sub call {
         
         # serve wsdl?
         if ($request->method eq 'GET' && $request->request_uri =~ /\?wsdl$/) {
-                return $self->_serve_wsdl;
+                my $file = IO::File->new($self->wsdl_file);
+                return [200, [], $file];
         }
 
         # run SOAP req on POST
@@ -102,12 +100,6 @@ sub _soap_callback {
                 my $response = $self->impl_object->$method($soap, $doc);
                 return $response;
         };
-}
-
-sub _serve_wsdl {
-        my ($self) = @_;
-        my $text = read_file($self->wsdl_file);
-        return [200, [], [$text]];
 }
 
 1;

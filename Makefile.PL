@@ -12,7 +12,6 @@ name 'XML-Compile-SOAP-PSGI';
 all_from 'lib/XML/Compile/SOAP/PSGI.pm';
 
 requires 'XML::Compile::SOAP';
-requires 'File::Slurp';
 requires 'Plack';
 
 author_requires 'Test::NoTabs';
