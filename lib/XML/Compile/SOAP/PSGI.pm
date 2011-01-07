@@ -26,6 +26,7 @@ XML::Compile::SOAP::PSGI - wrap a SOAP service as a PSGI app
 use Plack::Request;
 use Plack::Util::Accessor qw/ wsdl_file impl_object /;
 
+use XML::LibXML;
 use XML::Compile::SOAP11;
 use XML::Compile::WSDL11;
 
@@ -79,7 +80,13 @@ sub call {
         # run SOAP req on POST
         if ($request->method eq 'POST') {
                 my $parser = XML::LibXML->new;
-                my $doc = $parser->load_xml( IO => $request->body );
+                my $doc;
+		eval {
+			$doc = $parser->load_xml( IO => $request->body );
+		};
+		if ($@) {
+			return [500, [], [$@]];
+		};
 
                 my $action = $self->actionFromHeader($request);
                 my ($status, $huh, $response) 
