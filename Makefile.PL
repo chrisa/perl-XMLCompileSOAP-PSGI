@@ -11,8 +11,10 @@ use Module::Install::ReadmeFromPod;
 name 'XML-Compile-SOAP-PSGI';
 all_from 'lib/XML/Compile/SOAP/PSGI.pm';
 
-requires 'XML::Compile::SOAP';
 requires 'Plack';
+requires 'Template::Tiny';
+requires 'XML::Compile::SOAP';
+requires 'HTTP::Router::Declare';
 
 author_requires 'Test::NoTabs';
 author_requires 'Test::Pod' => '1.14';

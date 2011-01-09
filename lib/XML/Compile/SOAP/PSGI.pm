@@ -24,11 +24,17 @@ XML::Compile::SOAP::PSGI - wrap a SOAP service as a PSGI app
 =cut
 
 use Plack::Request;
-use Plack::Util::Accessor qw/ wsdl_file impl_object /;
+use Plack::Response;
+use Plack::Util::Accessor qw/ wsdl_file impl_object wsdl /;
+
+use HTTP::Router::Declare;
 
 use XML::LibXML;
 use XML::Compile::SOAP11;
 use XML::Compile::WSDL11;
+
+use Template::Tiny;
+use HTML::Entities;
 
 use base qw/ Plack::Component XML::Compile::SOAP::HTTPDaemon /;
 
@@ -46,10 +52,16 @@ sub new {
         my $self = $class->SUPER::new(@_);
 
         my $wsdl = XML::Compile::WSDL11->new($self->wsdl_file);
+	$self->wsdl($wsdl);
 
         my $callbacks = {};
         for my $op ($wsdl->operations) {
-                my $callback = $self->_soap_callback($op->name);
+		my $method = $op->name;
+                my $callback = sub {
+			my ($soap, $doc) = @_;
+			my $response = $self->impl_object->$method($soap, $doc);
+			return $response;
+		};
                 $callbacks->{$op->name} = $callback;
         }
         $self->operationsFromWSDL($wsdl, callbacks => $callbacks);
@@ -66,47 +78,186 @@ PSGI entry point
 
 =cut
 
+my $router = router {
+	with { controller => 'Self' } => then {
+
+		match '/', { method => 'POST' },
+		     to { action => 'soap_method' };
+
+		match '/', { method => 'GET' },
+		     to { action => 'index' };
+
+		match '/{op}', { method => 'GET' },
+		     to { action => 'form' };
+
+		match '/{op}', { method => 'POST' },
+		     to { action => 'http_method' };
+	};
+};
+
 sub call {
         my ($self, $env) = @_;
-        
-        my $request = Plack::Request->new($env);
-        
-        # serve wsdl?
-        if ($request->method eq 'GET' && $request->request_uri =~ /\?wsdl$/) {
-                my $file = IO::File->new($self->wsdl_file);
-                return [200, [], $file];
-        }
+        my $req = Plack::Request->new($env);
 
-        # run SOAP req on POST
-        if ($request->method eq 'POST') {
-                my $parser = XML::LibXML->new;
-                my $doc;
-                eval {
-                        $doc = $parser->load_xml( IO => $request->body );
-                };
-                if ($@) {
-                        return [500, [], [$@]];
-                }
+	my $match = $router->match($req)
+	     or return $req->new_response(404)->finalize;
 
-                my $action = $self->actionFromHeader($request);
-                my ($status, $msg, $response) 
-                     = $self->process($doc, $request, $action);
+	my $p = $match->params;
+	my $action = $self->can($p->{action})
+	     or return $req->new_response(405)->finalize;
 
-                return [$status, [], [$response->toString]];
-        }
-
-        # else html service desc TODO
-        [404, [], []];
+	my $res = $self->$action($req, $p);
+	$res->finalize;
 }
 
-sub _soap_callback {
-        my ($self, $method) = @_;
+sub download_wsdl {
+	my ($self, $req, $params) = @_;
 
-        return sub {
-                my ($soap, $doc) = @_;
-                my $response = $self->impl_object->$method($soap, $doc);
-                return $response;
-        };
+	my $file = IO::File->new($self->wsdl_file);
+	my $res = Plack::Response->new(200);
+	$res->content_type('text/xml');
+	$res->body($file);
+	return $res;
 }
 
-1;
+sub soap_method {
+	my ($self, $req, $params) = @_;
+
+	my $parser = XML::LibXML->new;
+
+	my $doc;
+	eval {
+		$doc = $parser->load_xml( IO => $req->body );
+	};
+	if ($@) {
+		return [500, [], [$@]];
+	}
+
+	my $action = $self->actionFromHeader($req);
+	my ($status, $msg, $soap)
+	     = $self->process($doc, $req, $action);
+
+	my $res = Plack::Response->new($status);
+	$res->content_type('text/xml');
+	$res->body([$soap->toString]);
+	return $res;
+}
+
+sub index {
+	my ($self, $req, $params) = @_;
+
+	if ($req->uri =~ /wsdl$/i) {
+		return $self->download_wsdl;
+	}
+
+	my $services = {};
+	for my $op ($self->wsdl->operations) {
+		$services->{$op->serviceName} ||= [];
+		push @{$services->{$op->serviceName}}, {
+			name => $op->name,
+			url  => $req->request_uri . '/' . $op->name,
+		};
+	}
+	my $vars = { services => [] };
+	for my $service (keys %$services) {
+		push @{$vars->{services}}, {
+			name => $service,
+			ops  => $services->{$service},
+		};
+	}
+
+	my $template = Template::Tiny->new;
+	my $input = _index_template();
+	my $output = '';
+
+	$template->process( \$input, $vars, \$output );
+  	
+	my $res = Plack::Response->new(200);
+	$res->content_type('text/html');
+	$res->body($output);
+	return $res;
+}
+
+sub _index_template {
+	return <<EOHTML;
+<!DOCTYPE html>
+<html>
+<head>
+<title>SOAP Service</title>
+</head>
+<body style="font-family: Helvetica">
+[% FOREACH service IN services %]
+<h1 style="background-color: #4a70bc; color: #fff;">SOAP Service [% service.name %]</h1>
+<div>
+  <h2>Service Definition</h2>
+  <p><a href="?wsdl">WSDL</a></p>
+  <h2>Operations</h2>
+  [% FOREACH op IN service.ops %]
+  <a href="[% op.url %]">[% op.name %]</a>
+  [% END %]
+</div>
+[% END %]
+</body>
+</html>
+EOHTML
+}
+
+sub form {
+	my ($self, $req, $params) = @_;
+
+	my $op;
+	for my $operation ($self->wsdl->operations) {
+		if ($params->{op} eq $operation->name) {
+			$op = $operation;
+			last;
+		}
+	}
+
+	my $xml;
+
+	# dodgy template section
+	my $def = $op->{input_def};
+	foreach my $part ( @{$def->{body}{parts} || []} ) {
+		my $name = $part->{name};
+		my ($kind, $value) = $part->{type} ? (type => $part->{type})
+		     : (element => $part->{element});
+		my $type = $self->wsdl->prefixed($value) || $value;
+		
+		$xml .= $self->wsdl->template(XML => $value, skip_header => 1, recurse => 1);
+	}
+
+	my $vars = { 
+		op => { 
+			name => $op->name, 
+			template => encode_entities($xml),
+		} 
+	};
+
+	my $template = Template::Tiny->new;
+	my $input = _form_template();
+	my $output = '';
+
+	$template->process( \$input, $vars, \$output );
+  	
+	my $res = Plack::Response->new(200);
+	$res->content_type('text/html');
+	$res->body($output);
+	return $res;
+}
+
+sub _form_template {
+	return <<EOHTML;
+<!DOCTYPE html>
+<html>
+<head>
+<title>SOAP Method</title>
+</head>
+<body style="font-family: Helvetica">
+<h1 style="background-color: #4a70bc; color: #fff;">SOAP Method [% op.name %]</h1>
+<pre>
+[% op.template %]
+</pre>
+</body>
+</html>
+EOHTML
+}
