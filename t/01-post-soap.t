@@ -16,7 +16,7 @@ test_psgi $app => sub {
         my ($cb) = @_;
 
         subtest 'good request' => sub {
-                my $req = POST('/soap/foo');
+                my $req = POST('/');
                 my $soap = <<EOSOAP;
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                   xmlns:urn="urn:ComplexApp">
@@ -46,7 +46,7 @@ EOSOAP
         };
 
         subtest 'bad request' => sub {
-                my $req = POST('/soap/foo');
+                my $req = POST('/');
                 my $soap = <<EOSOAP;
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                   xmlns:urn="urn:ComplexApp">

@@ -52,16 +52,16 @@ sub new {
         my $self = $class->SUPER::new(@_);
 
         my $wsdl = XML::Compile::WSDL11->new($self->wsdl_file);
-	$self->wsdl($wsdl);
+        $self->wsdl($wsdl);
 
         my $callbacks = {};
         for my $op ($wsdl->operations) {
-		my $method = $op->name;
+                my $method = $op->name;
                 my $callback = sub {
-			my ($soap, $doc) = @_;
-			my $response = $self->impl_object->$method($soap, $doc);
-			return $response;
-		};
+                        my ($soap, $doc) = @_;
+                        my $response = $self->impl_object->$method($soap, $doc);
+                        return $response;
+                };
                 $callbacks->{$op->name} = $callback;
         }
         $self->operationsFromWSDL($wsdl, callbacks => $callbacks);
@@ -72,114 +72,144 @@ sub new {
         return $self;
 }
 
+my $router = router {
+        with { controller => 'Self' } => then {
+
+                match '/', { method => 'POST' },
+                     to { action => 'soap_method' };
+
+                match '/', { method => 'GET' },
+                     to { action => 'index' };
+
+                match '/{op}', { method => 'GET' },
+                     to { action => 'form' };
+
+                match '/{op}', { method => 'POST' },
+                     to { action => 'http_method' };
+        };
+};
+
 =head2 call($self, $env)
 
 PSGI entry point
 
 =cut
 
-my $router = router {
-	with { controller => 'Self' } => then {
-
-		match '/', { method => 'POST' },
-		     to { action => 'soap_method' };
-
-		match '/', { method => 'GET' },
-		     to { action => 'index' };
-
-		match '/{op}', { method => 'GET' },
-		     to { action => 'form' };
-
-		match '/{op}', { method => 'POST' },
-		     to { action => 'http_method' };
-	};
-};
-
 sub call {
         my ($self, $env) = @_;
         my $req = Plack::Request->new($env);
 
-	my $match = $router->match($req)
-	     or return $req->new_response(404)->finalize;
+        my $match = $router->match($req)
+             or return $req->new_response(404)->finalize;
 
-	my $p = $match->params;
-	my $action = $self->can($p->{action})
-	     or return $req->new_response(405)->finalize;
+        my $p = $match->params;
 
-	my $res = $self->$action($req, $p);
-	$res->finalize;
+        my $action = $self->can($p->{action})
+             or return $req->new_response(405)->finalize;
+
+        my $res = $self->$action($req, $p);
+        $res->finalize;
 }
+
+=head2 download_wsdl($self, $req, $params)
+
+Action sub for the "download WSDL" process. 
+
+=cut
 
 sub download_wsdl {
-	my ($self, $req, $params) = @_;
+        my ($self, $req, $params) = @_;
 
-	my $file = IO::File->new($self->wsdl_file);
-	my $res = Plack::Response->new(200);
-	$res->content_type('text/xml');
-	$res->body($file);
-	return $res;
+        my $file = IO::File->new($self->wsdl_file);
+        my $res = $req->new_response(200);
+        $res->content_type('text/xml');
+        $res->body($file);
+        return $res;
 }
+
+=head2 soap_method($self, $req, $params)
+
+Action sub for the "run SOAP method" process.
+
+=cut
 
 sub soap_method {
-	my ($self, $req, $params) = @_;
+        my ($self, $req, $params) = @_;
 
-	my $parser = XML::LibXML->new;
+        my $parser = XML::LibXML->new;
 
-	my $doc;
-	eval {
-		$doc = $parser->load_xml( IO => $req->body );
-	};
-	if ($@) {
-		return [500, [], [$@]];
-	}
+        my $doc;
+        eval {
+                $doc = $parser->load_xml( IO => $req->body );
+        };
+        if ($@) {
+                print STDERR $@;
+                my $res = $req->new_response(500);
+                $res->body([$@]);
+                return $res;
+        }
 
-	my $action = $self->actionFromHeader($req);
-	my ($status, $msg, $soap)
-	     = $self->process($doc, $req, $action);
+        my ($status, $msg, $soap);
+        eval {
+                my $action = $self->actionFromHeader($req);
+                ($status, $msg, $soap) = $self->process($doc, $req, $action);
+        };
+        if ($@) {
+                my $res = $req->new_response(500);
+                $res->content_type('text/plain');
+                $res->body([$@]);
+                return $res;
+        }
 
-	my $res = Plack::Response->new($status);
-	$res->content_type('text/xml');
-	$res->body([$soap->toString]);
-	return $res;
+        my $res = $req->new_response($status);
+        $res->content_type('text/xml');
+        $res->body([$soap->toString]);
+        return $res;
 }
 
+=head2 index($self, $req, $params)
+
+Action sub for the "Service HTML index page" process
+
+=cut
+
 sub index {
-	my ($self, $req, $params) = @_;
+        my ($self, $req, $params) = @_;
 
-	if ($req->uri =~ /wsdl$/i) {
-		return $self->download_wsdl;
-	}
+        if ($req->uri =~ /wsdl$/i) {
+                return $self->download_wsdl($req, $params);
+        }
 
-	my $services = {};
-	for my $op ($self->wsdl->operations) {
-		$services->{$op->serviceName} ||= [];
-		push @{$services->{$op->serviceName}}, {
-			name => $op->name,
-			url  => $req->request_uri . '/' . $op->name,
-		};
-	}
-	my $vars = { services => [] };
-	for my $service (keys %$services) {
-		push @{$vars->{services}}, {
-			name => $service,
-			ops  => $services->{$service},
-		};
-	}
+        my $services = {};
+        for my $op ($self->wsdl->operations) {
+                $services->{$op->serviceName} ||= [];
+                push @{$services->{$op->serviceName}}, {
+                        name => $op->name,
+                        url  => $req->request_uri . '/' . $op->name,
+                };
+        }
+        my $vars = { services => [] };
+        for my $service (keys %$services) {
+                push @{$vars->{services}}, {
+                        name => $service,
+                        ops  => $services->{$service},
+                };
+        }
 
-	my $template = Template::Tiny->new;
-	my $input = _index_template();
-	my $output = '';
+        my $template = Template::Tiny->new;
+        my $input = _index_template();
+        my $output = '';
 
-	$template->process( \$input, $vars, \$output );
-  	
-	my $res = Plack::Response->new(200);
-	$res->content_type('text/html');
-	$res->body($output);
-	return $res;
+        $template->process( \$input, $vars, \$output );
+        
+        my $res = Plack::Response->new(200);
+        $res->content_type('text/html');
+        $res->body($output);
+        return $res;
 }
 
 sub _index_template {
-	return <<EOHTML;
+        return <<EOHTML;
 <!DOCTYPE html>
 <html>
 <head>
@@ -202,51 +232,57 @@ sub _index_template {
 EOHTML
 }
 
+=head2 form($self, $req, $params)
+
+Action sub for the "Method HTML page" process
+
+=cut
+
 sub form {
-	my ($self, $req, $params) = @_;
+        my ($self, $req, $params) = @_;
 
-	my $op;
-	for my $operation ($self->wsdl->operations) {
-		if ($params->{op} eq $operation->name) {
-			$op = $operation;
-			last;
-		}
-	}
+        my $op;
+        for my $operation ($self->wsdl->operations) {
+                if ($params->{op} eq $operation->name) {
+                        $op = $operation;
+                        last;
+                }
+        }
 
-	my $xml;
+        my $xml;
 
-	# dodgy template section
-	my $def = $op->{input_def};
-	foreach my $part ( @{$def->{body}{parts} || []} ) {
-		my $name = $part->{name};
-		my ($kind, $value) = $part->{type} ? (type => $part->{type})
-		     : (element => $part->{element});
-		my $type = $self->wsdl->prefixed($value) || $value;
-		
-		$xml .= $self->wsdl->template(XML => $value, skip_header => 1, recurse => 1);
-	}
+        # dodgy template section
+        my $def = $op->{input_def};
+        foreach my $part ( @{$def->{body}{parts} || []} ) {
+                my $name = $part->{name};
+                my ($kind, $value) = $part->{type} ? (type => $part->{type})
+                     : (element => $part->{element});
+                my $type = $self->wsdl->prefixed($value) || $value;
+                
+                $xml .= $self->wsdl->template(XML => $value, skip_header => 1, recurse => 1);
+        }
 
-	my $vars = { 
-		op => { 
-			name => $op->name, 
-			template => encode_entities($xml),
-		} 
-	};
+        my $vars = { 
+                op => { 
+                        name => $op->name, 
+                        template => encode_entities($xml),
+                } 
+        };
 
-	my $template = Template::Tiny->new;
-	my $input = _form_template();
-	my $output = '';
+        my $template = Template::Tiny->new;
+        my $input = _form_template();
+        my $output = '';
 
-	$template->process( \$input, $vars, \$output );
-  	
-	my $res = Plack::Response->new(200);
-	$res->content_type('text/html');
-	$res->body($output);
-	return $res;
+        $template->process( \$input, $vars, \$output );
+        
+        my $res = Plack::Response->new(200);
+        $res->content_type('text/html');
+        $res->body($output);
+        return $res;
 }
 
 sub _form_template {
-	return <<EOHTML;
+        return <<EOHTML;
 <!DOCTYPE html>
 <html>
 <head>

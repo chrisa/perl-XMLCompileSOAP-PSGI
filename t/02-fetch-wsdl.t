@@ -16,7 +16,7 @@ test_psgi $app => sub {
         my ($cb) = @_;
 
         subtest 'good request' => sub {
-                my $req = GET('/soap/foo?wsdl');
+                my $req = GET('/?wsdl');
                 my $res = $cb->($req);
                 ok($res->is_success, 'status');
                 
