@@ -25,7 +25,7 @@ XML::Compile::SOAP::PSGI - wrap a SOAP service as a PSGI app
 
 use Plack::Request;
 use Plack::Response;
-use Plack::Util::Accessor qw/ wsdl_file impl_object wsdl /;
+use Plack::Util::Accessor qw/ wsdl_file impl_object wsdl endpoint /;
 
 use HTTP::Router::Declare;
 
@@ -33,6 +33,7 @@ use XML::LibXML;
 use XML::Compile::SOAP11;
 use XML::Compile::WSDL11;
 
+use File::Slurp;
 use Template::Tiny;
 use HTML::Entities;
 
@@ -120,10 +121,16 @@ Action sub for the "download WSDL" process.
 sub download_wsdl {
         my ($self, $req, $params) = @_;
 
-        my $file = IO::File->new($self->wsdl_file);
+        my $file = read_file($self->wsdl_file);
+        my $vars = { endpoint => $self->endpoint };
+
+        my $template = Template::Tiny->new;
+        my $output = '';
+        $template->process( \$file, $vars, \$output );
+
         my $res = $req->new_response(200);
         $res->content_type('text/xml');
-        $res->body($file);
+        $res->body($output);
         return $res;
 }
 
