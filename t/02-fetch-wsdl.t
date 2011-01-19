@@ -10,6 +10,7 @@ use XML::Compile::SOAP::PSGI;
 my $app = XML::Compile::SOAP::PSGI->new(
         wsdl_file   => 'wsdl/foo.wsdl',
         impl_object => undef,
+        endpoint    => 'http://localhost:5000/soap/foo',
 );
 
 test_psgi $app => sub {
@@ -19,7 +20,8 @@ test_psgi $app => sub {
                 my $req = GET('/?wsdl');
                 my $res = $cb->($req);
                 ok($res->is_success, 'status');
-                
+                ok($res->content =~ m!http://localhost:5000!, 'templated endpoint');
+
                 my $parser = XML::LibXML->new;
                 my $doc = $parser->load_xml( string => $res->content );
                 isa_ok($doc, 'XML::LibXML::Document', 'parsed xml');

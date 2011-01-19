@@ -56,7 +56,7 @@
 
   <service name="ComplexApp" xmlns="http://schemas.xmlsoap.org/wsdl/">
     <port binding="tns:ComplexAppBinding" name="ComplexAppPort">
-      <soap:address location="http://localhost:5000/soap/foo" />
+      <soap:address location="[% endpoint %]" />
     </port>
   </service>
 

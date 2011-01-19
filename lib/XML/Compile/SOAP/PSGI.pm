@@ -16,6 +16,7 @@ XML::Compile::SOAP::PSGI - wrap a SOAP service as a PSGI app
   my $app = XML::Compile::SOAP::PSGI->new(
         wsdl_file   => 'wsdl/foo.wsdl',
         impl_object => TestImpl->new,
+        endpoint    => 'http://localhost:5000/soap/foo',
   );
   $app->to_app;
 
@@ -45,6 +46,7 @@ Constructor. Expects hash parameters:
 
  * wsdl_file - path to the WSDL file to use
  * impl_object - instantiated object with SOAP methods
+ * endpoint - URL where the app will be mounted
 
 =cut
 

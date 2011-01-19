@@ -8,6 +8,7 @@ app. Assumes you have a WSDL for your service.
   my $app = XML::Compile::SOAP::PSGI->new(
     wsdl_file   => 'wsdl/foo.wsdl',
     impl_object => $impl,
+    endpoint    => 'http://localhost:5000/soap/foo',
   );
 
   $app; # PSGI app
