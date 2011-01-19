@@ -150,7 +150,6 @@ sub soap_method {
                 $doc = $parser->load_xml( IO => $req->body );
         };
         if ($@) {
-                print STDERR $@;
                 my $res = $req->new_response(500);
                 $res->body([$@]);
                 return $res;
@@ -256,17 +255,27 @@ sub form {
                 }
         }
 
+        # handle request for unknown operation
+        unless (defined $op) {
+                my $res = Plack::Response->new(404);
+                $res->content_type('text/plain');
+                $res->body("Not Found\n");
+                return $res;
+        }
+
         my $xml;
 
         # dodgy template section
-        my $def = $op->{input_def};
-        foreach my $part ( @{$def->{body}{parts} || []} ) {
-                my $name = $part->{name};
-                my ($kind, $value) = $part->{type} ? (type => $part->{type})
-                     : (element => $part->{element});
-                my $type = $self->wsdl->prefixed($value) || $value;
+        for my $def ($op->{input_def}, $op->{output_def}) {
+                for my $part ( @{$def->{body}{parts} || []} ) {
+                        my $name = $part->{name};
+                        my ($kind, $value) = $part->{type} ? (type => $part->{type})
+                             : (element => $part->{element});
+                        my $type = $self->wsdl->prefixed($value) || $value;
                 
-                $xml .= $self->wsdl->template(XML => $value, skip_header => 1, recurse => 1);
+                        $xml .= $self->wsdl->template(XML => $value, skip_header => 1, recurse => 1);
+                        $xml .= "\n\n";
+                }
         }
 
         my $vars = { 
